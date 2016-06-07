@@ -15,11 +15,14 @@ The `schema-shape` tool outputs a textual representation of the shape of data in
 
 ### Sample Output -> `_internal`
 
-```
+```yaml
 DB _internal
+  # Duration of the retention policy
   RP monitor -> 168h0m0s
     Default -> true
+  # M measurementName -> numSeries 
   M database -> 2
+    # T tag_key -> numTagValues
     T database -> 2
     T hostname -> 1
     F numMeasurements
