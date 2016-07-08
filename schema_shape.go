@@ -64,18 +64,24 @@ func (sc *SchemaShape) MakeQueries() {
 	for _, db := range sc.Databases {
 		for _, rp := range db.RetentionPolicies {
 			for _, meas := range db.Measurements {
-				i := 0
-				for {
-					qry := fmt.Sprintf(`SELECT * FROM "%v"."%v"."%v" GROUP BY * SLIMIT %v SOFFSET %v`, db.Name, rp.Name, meas.Name, sc.numSeries, (sc.numSeries * i))
-					q, err := sc.NewQuery(qry, db.Name, meas)
-					if err != nil {
-						break
-					}
-					sc.addQuery(q)
-					i++
-				}
+				fmt.Println("got to makeQueries")
+				go sc.MakeQuery(db.Name, rp.Name, meas)
 			}
 		}
+	}
+}
+
+func (sc *SchemaShape) MakeQuery(db, rp string, meas *Measurement) {
+	fmt.Println("got to makequery")
+	i := 0
+	for {
+		qry := fmt.Sprintf(`SELECT * FROM "%v"."%v"."%v" GROUP BY * SLIMIT %v SOFFSET %v`, db, rp, meas.Name, sc.numSeries, (sc.numSeries * i))
+		q, err := sc.NewQuery(qry, db, meas)
+		if err != nil {
+			break
+		}
+		sc.addQuery(q)
+		i++
 	}
 }
 

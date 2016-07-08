@@ -15,8 +15,10 @@ func (sc *SchemaShape) NewQuery(stmt string, db string, meas *Measurement) (*Que
 	t1 := time.Now()
 	res, err := sc.queryDB(stmt, db)
 	t := time.Now().Sub(t1)
-	if len(res[0].Series) == 0 {
+	if err != nil {
 		return nil, err
+	} else if len(res[0].Series) == 0 {
+		return nil, fmt.Errorf("no results: %s", stmt)
 	}
 	check(err)
 	q := &Query{
