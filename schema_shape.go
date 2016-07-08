@@ -66,8 +66,8 @@ func (sc *SchemaShape) MakeQueries() {
 	for _, db := range sc.Databases {
 		for _, rp := range db.RetentionPolicies {
 			for _, meas := range db.Measurements {
-				wg.Add(1)
 				go sc.MakeQuery(db.Name, rp.Name, meas, wg)
+				wg.Add(1)
 			}
 		}
 	}
