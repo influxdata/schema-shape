@@ -27,7 +27,13 @@ func (sc *SchemaShape) NewQuery(stmt string, db string, meas *Measurement) (*Que
 		Measurement: meas,
 		t:           t,
 	}
-	q.Points()
+	pts := q.Points()
+	bp, err := client.NewBatchPoints(client.BatchPointsConfig{
+		Database:  db,
+		Precision: "ns",
+	})
+	bp.AddPoints(pts)
+	sc.DestClient.Write(bp)
 	return q, nil
 }
 

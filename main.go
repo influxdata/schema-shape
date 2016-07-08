@@ -18,7 +18,7 @@ var (
 
 func init() {
 	source = flag.String("source", "http://localhost:8086", "hostname of inlfux server")
-	dest = flag.String("dest", "http://localhost:8086", "hostname of inlfux server")
+	dest = flag.String("dest", "http://localhost:8087", "hostname of inlfux server")
 	srcun = flag.String("su", "", "influx auth username for source server")
 	srcpw = flag.String("sp", "", "influx auth password for source server")
 	destun = flag.String("du", "", "influx auth username for destination server")
