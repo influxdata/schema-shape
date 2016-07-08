@@ -28,13 +28,24 @@ func (sc *SchemaShape) NewQuery(stmt string, db string, meas *Measurement) (*Que
 		t:           t,
 	}
 	pts := q.Points()
+	sc.stats["PointsRecieved"] += len(pts)
 	bp, err := client.NewBatchPoints(client.BatchPointsConfig{
 		Database:  db,
 		Precision: "ns",
 	})
 	bp.AddPoints(pts)
+	writeResults(bp, sc.DestClient, time.Duration(500*time.Millisecond))
 	sc.DestClient.Write(bp)
+	sc.stats["PointsWritten"] += len(bp.Points())
 	return q, nil
+}
+
+func writeResults(bp client.BatchPoints, destClnt client.Client, timeout time.Duration) {
+	err := destClnt.Write(bp)
+	if err != nil {
+		time.Sleep(timeout)
+		writeResults(bp, destClnt, (timeout * timeout))
+	}
 }
 
 // Query holds data for a Measurement/RP combo

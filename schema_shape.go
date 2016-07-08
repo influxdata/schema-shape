@@ -7,8 +7,26 @@ import (
 	"github.com/influxdata/influxdb/client/v2"
 )
 
+//
+// type Stats struct {
+// 	Databases            int
+// 	RetentionPolicies    int
+// 	MeasurementsRecieved int
+// 	MeasurementsWritten  int
+// 	PointsRecieved       int
+// 	PointsWritten        int
+// }
+
 // NewSchamaShape returns things
 func NewSchamaShape(numSeries int) *SchemaShape {
+	stats := map[string]int{
+		"Databases":            0,
+		"RetentionPolicies":    0,
+		"MeasurementsRecieved": 0,
+		"MeasurementsWritten":  0,
+		"PointsRecieved":       0,
+		"PointsWritten":        0,
+	}
 	sc, err := client.NewHTTPClient(client.HTTPConfig{
 		Addr:     *source,
 		Username: *srcun,
@@ -26,22 +44,19 @@ func NewSchamaShape(numSeries int) *SchemaShape {
 		SourceClient: sc,
 		DestClient:   dc,
 		numSeries:    numSeries,
+		stats:        stats,
 	}
 }
 
 // SchemaShape does things
 type SchemaShape struct {
 	Databases    []*Database
-	Measurements []*Measurement
 	Queries      []*Query
 	SourceClient client.Client
 	DestClient   client.Client
 
 	numSeries int
-}
-
-func (sc *SchemaShape) sendPoints(pts []client.Point) {
-
+	stats     map[string]int
 }
 
 // Hydrate pulls all schema data to help make queries
@@ -64,14 +79,32 @@ func (sc *SchemaShape) Hydrate() {
 func (sc *SchemaShape) MakeQueries() {
 	var wg sync.WaitGroup
 	for _, db := range sc.Databases {
+		sc.CreateDestDatabase(db.Name)
 		for _, rp := range db.RetentionPolicies {
+			sc.CreateDestRP(db.Name, rp)
 			for _, meas := range db.Measurements {
-				go sc.MakeQuery(db.Name, rp.Name, meas, wg)
 				wg.Add(1)
+				go sc.MakeQuery(db.Name, rp.Name, meas, wg)
 			}
 		}
 	}
+	fmt.Println("here")
 	wg.Wait()
+	fmt.Println("here")
+}
+
+func (sc *SchemaShape) CreateDestDatabase(db string) {
+	sc.DestClient.Query(client.NewQuery(fmt.Sprintf("CREATE DATABASE %v", db), db, "ns"))
+}
+
+func (sc *SchemaShape) CreateDestRP(db string, rp *RetentionPolicy) {
+	var qry string
+	if rp.Default {
+		qry = fmt.Sprintf("CREATE RETENTION POLICY %v ON %v RETENTION %v REPLICATION %v DEFAULT", db, rp.Name, rp.Duration, rp.Replication)
+	} else {
+		qry = fmt.Sprintf("CREATE RETENTION POLICY %v ON %v RETENTION %v REPLICATION %v", db, rp.Name, rp.Duration, rp.Replication)
+	}
+	sc.DestClient.Query(client.NewQuery(qry, db, "ns"))
 }
 
 func (sc *SchemaShape) MakeQuery(db, rp string, meas *Measurement, wg sync.WaitGroup) {
