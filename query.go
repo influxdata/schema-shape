@@ -73,9 +73,6 @@ func (q *Query) Points() []*client.Point {
 			pts = append(pts, p)
 		}
 	}
-	for _, pt := range pts {
-		fmt.Println(pt)
-	}
 	return pts
 }
 

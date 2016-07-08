@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/influxdata/influxdb/client/v2"
 )
@@ -61,18 +62,19 @@ func (sc *SchemaShape) Hydrate() {
 
 // MakeQueries formats the query statements to extract all the data and assigns them to measurements
 func (sc *SchemaShape) MakeQueries() {
+	var wg sync.WaitGroup
 	for _, db := range sc.Databases {
 		for _, rp := range db.RetentionPolicies {
 			for _, meas := range db.Measurements {
-				fmt.Println("got to makeQueries")
-				go sc.MakeQuery(db.Name, rp.Name, meas)
+				wg.Add(1)
+				go sc.MakeQuery(db.Name, rp.Name, meas, wg)
 			}
 		}
 	}
+	wg.Wait()
 }
 
-func (sc *SchemaShape) MakeQuery(db, rp string, meas *Measurement) {
-	fmt.Println("got to makequery")
+func (sc *SchemaShape) MakeQuery(db, rp string, meas *Measurement, wg sync.WaitGroup) {
 	i := 0
 	for {
 		qry := fmt.Sprintf(`SELECT * FROM "%v"."%v"."%v" GROUP BY * SLIMIT %v SOFFSET %v`, db, rp, meas.Name, sc.numSeries, (sc.numSeries * i))
@@ -83,6 +85,7 @@ func (sc *SchemaShape) MakeQuery(db, rp string, meas *Measurement) {
 		sc.addQuery(q)
 		i++
 	}
+	wg.Done()
 }
 
 func (sc *SchemaShape) addQuery(qry *Query) {
