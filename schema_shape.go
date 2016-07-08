@@ -63,17 +63,26 @@ func (sc *SchemaShape) Hydrate() {
 // MakeQueries formats the query statements to extract all the data and assigns them to measurements
 func (sc *SchemaShape) MakeQueries() {
 	var wg sync.WaitGroup
+	pg := NewParallelGroup(20)
 	for _, db := range sc.Databases {
+		dbName := db.Name
+		wg.Add(len(db.RetentionPolicies) * len(db.Measurements))
 		for _, rp := range db.RetentionPolicies {
-			for _, meas := range db.Measurements {
-				go sc.MakeQuery(db.Name, rp.Name, meas, wg)
-				wg.Add(1)
+			rpName := rp.Name
+			for i := range db.Measurements {
+				meas := db.Measurements[i]
+				go pg.Do(func() {
+					defer wg.Done()
+					baseQry := fmt.Sprintf(`SELECT * FROM "%v"."%v"."%v" GROUP BY *`, dbName, rpName, meas.Name)
+					sc.MakeQuery(dbName, rpName, meas, wg)
+				})
 			}
 		}
 	}
 	wg.Wait()
 }
 
+// MakeQuery formats a query statement to extract data in a measurement
 func (sc *SchemaShape) MakeQuery(db, rp string, meas *Measurement, wg sync.WaitGroup) {
 	i := 0
 	for {
@@ -85,7 +94,23 @@ func (sc *SchemaShape) MakeQuery(db, rp string, meas *Measurement, wg sync.WaitG
 		sc.addQuery(q)
 		i++
 	}
-	wg.Done()
+}
+
+// ParallelGroup allows the maximum parrallelism of a set of operations to be controlled.
+type ParallelGroup chan struct{}
+
+// NewParallelGroup returns a group which allows n operations to run in parallel. A value of 0
+// means no operations will ever run.
+func NewParallelGroup(n int) ParallelGroup {
+	return make(chan struct{}, n)
+}
+
+// Do executes one operation of the ParallelGroup
+func (p ParallelGroup) Do(f func()) {
+	p <- struct{}{} // acquire working slot
+	defer func() { <-p }()
+
+	f()
 }
 
 func (sc *SchemaShape) addQuery(qry *Query) {
