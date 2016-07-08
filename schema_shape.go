@@ -8,7 +8,7 @@ import (
 )
 
 // NewSchamaShape returns things
-func NewSchamaShape(numSeries int) *SchemaShape {
+func NewSchamaShape(numSeries, numValues, numParallel int) *SchemaShape {
 	sc, err := client.NewHTTPClient(client.HTTPConfig{
 		Addr:     *source,
 		Username: *srcun,
@@ -26,6 +26,8 @@ func NewSchamaShape(numSeries int) *SchemaShape {
 		SourceClient: sc,
 		DestClient:   dc,
 		numSeries:    numSeries,
+		numValues:    numValues,
+		numParallel:  numParallel,
 	}
 }
 
@@ -37,7 +39,9 @@ type SchemaShape struct {
 	SourceClient client.Client
 	DestClient   client.Client
 
-	numSeries int
+	numSeries   int
+	numValues   int
+	numParallel int
 }
 
 func (sc *SchemaShape) sendPoints(pts []client.Point) {
@@ -63,18 +67,27 @@ func (sc *SchemaShape) Hydrate() {
 // MakeQueries formats the query statements to extract all the data and assigns them to measurements
 func (sc *SchemaShape) MakeQueries() {
 	var wg sync.WaitGroup
-	pg := NewParallelGroup(20)
+	pg := NewParallelGroup(sc.numParallel)
 	for _, db := range sc.Databases {
-		dbName := db.Name
+		if db.Name == "_internal" {
+			continue
+		}
+		sc.CreateDestDatabase(db.Name)
 		wg.Add(len(db.RetentionPolicies) * len(db.Measurements))
 		for _, rp := range db.RetentionPolicies {
-			rpName := rp.Name
+			sc.CreateDestRP(db.Name, rp)
 			for i := range db.Measurements {
 				meas := db.Measurements[i]
+				dbName := db.Name
+				rpName := rp.Name
+				baseQry := fmt.Sprintf(`SELECT * FROM "%v"."%v"."%v" GROUP BY *`, dbName, rp.Name, meas.Name)
 				go pg.Do(func() {
-					defer wg.Done()
-					baseQry := fmt.Sprintf(`SELECT * FROM "%v"."%v"."%v" GROUP BY *`, dbName, rpName, meas.Name)
-					sc.MakeQuery(dbName, rpName, meas, wg)
+					defer func() {
+						fmt.Println("Finished:", dbName, rpName, meas.Name)
+						wg.Done()
+					}()
+					fmt.Println("Starting:", dbName, rpName, meas.Name)
+					sc.MakeQuery(baseQry, dbName, meas)
 				})
 			}
 		}
@@ -83,15 +96,26 @@ func (sc *SchemaShape) MakeQueries() {
 }
 
 // MakeQuery formats a query statement to extract data in a measurement
-func (sc *SchemaShape) MakeQuery(db, rp string, meas *Measurement, wg sync.WaitGroup) {
+func (sc *SchemaShape) MakeQuery(baseQry, db string, meas *Measurement) {
+	var qry string
+	var err error
 	i := 0
+	j := 0
+	qr := UnknownResult
 	for {
-		qry := fmt.Sprintf(`SELECT * FROM "%v"."%v"."%v" GROUP BY * SLIMIT %v SOFFSET %v`, db, rp, meas.Name, sc.numSeries, (sc.numSeries * i))
-		q, err := sc.NewQuery(qry, db, meas)
-		if err != nil {
+		for {
+			qry = fmt.Sprintf(`%s LIMIT %v OFFSET %v SLIMIT %v SOFFSET %v`, baseQry, sc.numValues, (sc.numValues * j), sc.numSeries, (sc.numSeries * i))
+			qr, err = sc.NewQuery(qry, db, meas)
+			check(err)
+			if qr == MoreValuesResult {
+				j++
+				continue
+			}
 			break
 		}
-		sc.addQuery(q)
+		if qr == NoSeriesResult {
+			break
+		}
 		i++
 	}
 }
@@ -113,9 +137,23 @@ func (p ParallelGroup) Do(f func()) {
 	f()
 }
 
-func (sc *SchemaShape) addQuery(qry *Query) {
-	sc.Queries = append(sc.Queries, qry)
+func (sc *SchemaShape) CreateDestDatabase(db string) {
+	sc.DestClient.Query(client.NewQuery(fmt.Sprintf("CREATE DATABASE %v", db), db, "ns"))
 }
+
+func (sc *SchemaShape) CreateDestRP(db string, rp *RetentionPolicy) {
+	var qry string
+	if rp.Default {
+		qry = fmt.Sprintf("CREATE RETENTION POLICY %v ON %v RETENTION %v REPLICATION %v DEFAULT", db, rp.Name, rp.Duration, rp.Replication)
+	} else {
+		qry = fmt.Sprintf("CREATE RETENTION POLICY %v ON %v RETENTION %v REPLICATION %v", db, rp.Name, rp.Duration, rp.Replication)
+	}
+	sc.DestClient.Query(client.NewQuery(qry, db, "ns"))
+}
+
+// func (sc *SchemaShape) addQuery(qry *Query) {
+// 	sc.Queries = append(sc.Queries, qry)
+// }
 
 // Convinence function for querying the source database
 func (sc *SchemaShape) queryDB(cmd, db string) (res []client.Result, err error) {

@@ -10,17 +10,26 @@ import (
 	"github.com/influxdata/influxdb/models"
 )
 
+type QueryResult int
+
+const (
+	UnknownResult QueryResult = iota
+	SuccessResult
+	NoSeriesResult
+	MoreValuesResult
+)
+
 // NewQuery creates a new query object and runs a query against the database
-func (sc *SchemaShape) NewQuery(stmt string, db string, meas *Measurement) (*Query, error) {
+func (sc *SchemaShape) NewQuery(stmt string, db string, meas *Measurement) (QueryResult, error) {
 	t1 := time.Now()
 	res, err := sc.queryDB(stmt, db)
 	t := time.Now().Sub(t1)
-	if err != nil {
-		return nil, err
-	} else if len(res[0].Series) == 0 {
-		return nil, fmt.Errorf("no results: %s", stmt)
-	}
 	check(err)
+
+	if len(res[0].Series) == 0 {
+		return NoSeriesResult, nil
+	}
+
 	q := &Query{
 		Statement:   stmt,
 		Series:      res[0].Series,
@@ -34,7 +43,13 @@ func (sc *SchemaShape) NewQuery(stmt string, db string, meas *Measurement) (*Que
 	})
 	bp.AddPoints(pts)
 	sc.DestClient.Write(bp)
-	return q, nil
+
+	for _, s := range res[0].Series {
+		if len(s.Values) == sc.numValues {
+			return MoreValuesResult, nil
+		}
+	}
+	return SuccessResult, nil
 }
 
 // Query holds data for a Measurement/RP combo

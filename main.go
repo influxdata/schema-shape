@@ -7,13 +7,15 @@ import (
 )
 
 var (
-	source    *string
-	dest      *string
-	srcun     *string
-	srcpw     *string
-	destun    *string
-	destpw    *string
-	numSeries *int
+	source      *string
+	dest        *string
+	srcun       *string
+	srcpw       *string
+	destun      *string
+	destpw      *string
+	numSeries   *int
+	numValues   *int
+	numParallel *int
 )
 
 func init() {
@@ -24,11 +26,13 @@ func init() {
 	destun = flag.String("du", "", "influx auth username for destination server")
 	destpw = flag.String("dp", "", "influx auth password for destination server")
 	numSeries = flag.Int("numSeries", 10000, "number of series to query at one time")
+	numValues = flag.Int("numValues", 10000, "number of values to query at one time")
+	numParallel = flag.Int("numParallel", 2, "number of parallel queries allowed")
 	flag.Parse()
 }
 
 func main() {
-	sc := NewSchamaShape(*numSeries)
+	sc := NewSchamaShape(*numSeries, *numValues, *numParallel)
 	sc.Hydrate()
 	sc.MakeQueries()
 }
